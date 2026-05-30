@@ -1,0 +1,340 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    "docker:enableMajor",
+    "helpers:pinGitHubActionDigests",
+    ":automergeBranch",
+    ":dependencyDashboard",
+    ":disableRateLimiting",
+    ":semanticCommits",
+  ],
+  dependencyDashboard: true,
+  dependencyDashboardTitle: "Renovate Dashboard :robot:",
+  timezone: "America/New_York",
+  ignorePaths: ["**/*.sops.*", "**/_template/**"],
+  flux: {
+    managerFilePatterns: ["/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/", "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/"],
+  },
+  helmfile: {
+    managerFilePatterns: [
+      "/(^|/)helmfile\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
+      "/(^|/)helmfile\\.d/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
+      "/(^|/)bootstrap/helmfile/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
+    ],
+  },
+  kubernetes: {
+    managerFilePatterns: ["/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/", "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/"],
+  },
+  kustomize: {
+    managerFilePatterns: ["/^kustomization\\.ya?ml(?:\\.j2)?$/"],
+  },
+  "pre-commit": {
+    enabled: true,
+  },
+  packageRules: [
+    {
+      description: "Override Helmfile Dependency Name",
+      matchDatasources: ["docker"],
+      matchManagers: ["helmfile"],
+      overrideDepName: "{{packageName}}",
+    },
+    {
+      description: "Flux Operator Group",
+      groupName: "flux-operator",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/flux-operator/", "/flux-instance/", "/flux-operator-manifests/"],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+    },
+    {
+      description: "Group gitleaks updates across mise + pre-commit hook",
+      matchPackageNames: ["/gitleaks/"],
+      groupName: "gitleaks",
+      group: {
+        commitMessageTopic: "{{{groupName}}}",
+      },
+    },
+    {
+      description: "talos-stack patch — 5 days automerge",
+      matchPackageNames: [
+        "/^aqua:siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
+        "/^siderolabs\\/talos$/",
+        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
+      ],
+      groupName: "talos-stack",
+      group: {
+        commitMessageTopic: "{{{groupName}}}",
+      },
+      automerge: true,
+      automergeType: "pr",
+      platformAutomerge: true,
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "5 days",
+      schedule: ["after 7am and before 7pm every weekday"],
+    },
+    {
+      description: "talos-stack minor — 14 days manual",
+      matchPackageNames: [
+        "/^aqua:siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
+        "/^siderolabs\\/talos$/",
+        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
+      ],
+      groupName: "talos-stack",
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "14 days",
+      automerge: false,
+    },
+    {
+      description: "talos-stack major — 30 days manual",
+      matchPackageNames: [
+        "/^aqua:siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
+        "/^siderolabs\\/talos$/",
+        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
+      ],
+      groupName: "talos-stack",
+      matchUpdateTypes: ["major"],
+      minimumReleaseAge: "30 days",
+      automerge: false,
+    },
+    {
+      // kubens ships from the ahmetb/kubectx repo (no separate release stream).
+      // The customManager regex on `.mise.toml` annotation redirects depName
+      // to ahmetb/kubectx for the lookup; this rule silences mise manager's
+      // parallel auto-detected lookup that would otherwise still 404 on
+      // github-tags ahmetb/kubens.
+      //
+      // matchPackageNames matches against Renovate's `packageName` (not
+      // `depName`). For mise + aqua backend, depName is "aqua:ahmetb/kubens"
+      // but packageName normalises to "ahmetb/kubens" (the "aqua:" is mise's
+      // backend selector, not part of the package identity). Verified via
+      // `npx renovate --platform=local --dry-run=lookup` debug log.
+      description: "Disable mise manager's parallel kubens lookup (annotation handles it)",
+      matchManagers: ["mise"],
+      matchPackageNames: ["ahmetb/kubens"],
+      enabled: false,
+    },
+    {
+      // Same packageName-vs-depName note as above — match the normalised
+      // packageName (no aqua: prefix).
+      description: "Group kubectx + kubens bumps — same upstream repo + tag",
+      matchManagers: ["mise"],
+      matchPackageNames: ["ahmetb/kubectx", "ahmetb/kubens"],
+      groupName: "kubectx-stack",
+      group: {
+        commitMessageTopic: "{{{groupName}}}",
+      },
+    },
+    {
+      description: "CNI (cilium) patch — 5 days automerge",
+      matchPackageNames: ["/cilium/"],
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "5 days",
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
+      description: "CNI (cilium) minor + major — 14 days manual",
+      matchPackageNames: ["/cilium/"],
+      matchUpdateTypes: ["minor", "major"],
+      minimumReleaseAge: "14 days",
+      automerge: false,
+    },
+    {
+      description: "Critical infra Helm (flux/eso/cert-manager) patch — 5 days automerge",
+      matchPackageNames: ["/flux-operator/", "/flux-instance/", "/external-secrets/", "/cert-manager/"],
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "5 days",
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
+      description: "Critical infra Helm minor + major — 14 days manual",
+      matchPackageNames: ["/flux-operator/", "/flux-instance/", "/external-secrets/", "/cert-manager/"],
+      matchUpdateTypes: ["minor", "major"],
+      minimumReleaseAge: "14 days",
+      automerge: false,
+    },
+    {
+      description: "GitHub Actions patch + minor + digest — 3-7 days automerge",
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["patch", "digest"],
+      minimumReleaseAge: "3 days",
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
+      description: "GitHub Actions minor — 7 days automerge",
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "7 days",
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
+      description: "Pin docker image digests alongside tags — immutable refs",
+      matchDatasources: ["docker"],
+      pinDigests: true,
+    },
+    {
+      description: "App-tier patch + digest — 3 days automerge",
+      matchUpdateTypes: ["patch", "digest"],
+      automerge: true,
+      platformAutomerge: true,
+      minimumReleaseAge: "3 days",
+    },
+    {
+      description: "App-tier minor (Helm + image only) — 7 days automerge",
+      matchManagers: ["flux", "helmfile", "helm-values", "kubernetes"],
+      matchDatasources: ["docker", "helm"],
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "7 days",
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
+      description: "CLI tools (mise) patch — 3 days automerge",
+      matchManagers: ["mise"],
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "3 days",
+      automerge: true,
+    },
+    {
+      description: "CLI tools (mise) minor — 7 days automerge",
+      matchManagers: ["mise"],
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "7 days",
+      automerge: true,
+    },
+    {
+      description: "pre-commit hooks patch — 3 days automerge",
+      matchManagers: ["pre-commit"],
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "3 days",
+      automerge: true,
+    },
+    {
+      description: "pre-commit hooks minor — 7 days automerge",
+      matchManagers: ["pre-commit"],
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "7 days",
+      automerge: true,
+    },
+    {
+      description: "Major bumps require manual review (defensive default)",
+      matchUpdateTypes: ["major"],
+      automerge: false,
+    },
+    {
+      matchUpdateTypes: ["major"],
+      semanticCommitType: "feat",
+      commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
+      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
+    },
+    {
+      matchUpdateTypes: ["minor"],
+      semanticCommitType: "feat",
+      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
+    },
+    {
+      matchUpdateTypes: ["patch"],
+      semanticCommitType: "fix",
+      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
+    },
+    {
+      matchUpdateTypes: ["digest"],
+      semanticCommitType: "chore",
+      commitMessageExtra: "( {{currentDigestShort}} ➔ {{newDigestShort}} )",
+    },
+    {
+      matchDatasources: ["docker"],
+      semanticCommitScope: "container",
+      commitMessageTopic: "image {{depName}}",
+    },
+    {
+      matchDatasources: ["helm"],
+      semanticCommitScope: "helm",
+      commitMessageTopic: "chart {{depName}}",
+    },
+    {
+      matchManagers: ["github-actions"],
+      semanticCommitType: "ci",
+      semanticCommitScope: "github-action",
+      commitMessageTopic: "action {{depName}}",
+    },
+    {
+      matchDatasources: ["github-releases"],
+      semanticCommitScope: "github-release",
+      commitMessageTopic: "release {{depName}}",
+    },
+    {
+      matchManagers: ["mise"],
+      semanticCommitScope: "mise",
+      commitMessageTopic: "tool {{depName}}",
+    },
+    {
+      matchUpdateTypes: ["major"],
+      labels: ["type/major"],
+    },
+    {
+      matchUpdateTypes: ["minor"],
+      labels: ["type/minor"],
+    },
+    {
+      matchUpdateTypes: ["patch"],
+      labels: ["type/patch"],
+    },
+    {
+      matchUpdateTypes: ["digest"],
+      labels: ["type/digest"],
+    },
+    {
+      matchDatasources: ["docker"],
+      addLabels: ["renovate/container"],
+    },
+    {
+      matchDatasources: ["helm"],
+      addLabels: ["renovate/helm"],
+    },
+    {
+      matchManagers: ["github-actions"],
+      addLabels: ["renovate/github-action"],
+    },
+    {
+      matchDatasources: ["github-releases"],
+      addLabels: ["renovate/github-release"],
+    },
+  ],
+  customManagers: [
+    {
+      description: "Process annotated dependencies",
+      customType: "regex",
+      managerFilePatterns: ["/(^|/).+\\.env(?:\\.j2)?$/", "/(^|/).+\\.sh(?:\\.j2)?$/", "/(^|/).+\\.ya?ml(?:\\.j2)?$/"],
+      matchStrings: [
+        "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( repository=(?<registryUrl>\\S+))?\\n.+(:\\s|=)(&\\S+\\s)?(?<currentValue>\\S+)",
+        "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n.+/(?<currentValue>(v|\\d)[^/]+)",
+      ],
+      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+    },
+    {
+      customType: "regex",
+      description: "Process OCI dependencies",
+      managerFilePatterns: ["/\\.yaml(?:\\.j2)?$/"],
+      matchStrings: ["oci://(?<depName>[^:]+):(?<currentValue>\\S+)"],
+      datasourceTemplate: "docker",
+    },
+    {
+      customType: "regex",
+      description: "Cosign verify image-tag args in helmfile hooks",
+      managerFilePatterns: ["/(^|/)bootstrap/helmfile/.+\\.ya?ml(?:\\.gotmpl)?$/"],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*-\\s*"[^":]+:(?<currentValue>[^"]+)"',
+      ],
+      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}docker{{/if}}",
+    },
+  ],
+}
