@@ -9,9 +9,11 @@ In each consuming repo, set the entire `.renovaterc.json5` (or `renovate.json`) 
 ```json5
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>alexander-hughes/renovate-config"]
+  "extends": ["github>alexander-hughes/renovate-config:default.json5"]
 }
 ```
+
+The explicit `:default.json5` suffix is required: Renovate's shorthand `github>org/repo` resolver only looks for `default.json` at the preset root. Since this preset uses JSON5 (for inline comments), consumers must name the file explicitly.
 
 Add repo-specific overrides below `extends` as needed. The preset always resolves against `main`, so changes here propagate to all consumers on the next Renovate run.
 
