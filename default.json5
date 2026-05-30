@@ -181,6 +181,17 @@
       pinDigests: true,
     },
     {
+      // custom.regex matchStrings capture currentValue only (no currentDigest
+      // group), so Renovate has no anchor to write the new digest back to.
+      // pinDigests:true against these deps produces "Error updating branch:
+      // update failure" and the branch is never pushed. Disable here; rely on
+      // the flux/kubernetes managers (and their writable spec.ref.digest /
+      // image:tag@digest forms) for the actual pinning.
+      description: "Skip digest pin for custom.regex — capture has no currentDigest",
+      matchManagers: ["custom.regex"],
+      pinDigests: false,
+    },
+    {
       description: "App-tier patch + digest — 3 days automerge",
       matchUpdateTypes: ["patch", "digest"],
       automerge: true,
