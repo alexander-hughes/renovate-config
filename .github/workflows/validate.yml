@@ -18,5 +18,5 @@ jobs:
         with:
           node-version: lts/*
 
-      - name: Validate default.json5
-        run: npx --yes --package renovate renovate-config-validator --strict default.json5
+      - name: Validate configs
+        run: npx --yes --package renovate renovate-config-validator --strict default.json5 .renovaterc.json5
