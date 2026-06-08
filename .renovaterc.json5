@@ -1,8 +1,4 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  // This repo publishes default.json5 for consumers; its own footprint is just
-  // the GitHub Actions in .github/workflows. Extend the upstream presets
-  // directly rather than self-referencing default.json5 — avoids resolving the
-  // preset against main-not-PR and coupling to any future preset split.
-  extends: ["config:recommended", "helpers:pinGitHubActionDigests"],
+  extends: ["github>alexander-hughes/renovate-config:default.json5"],
 }
