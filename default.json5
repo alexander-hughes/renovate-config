@@ -241,6 +241,20 @@
       automerge: false,
     },
     {
+      // recyclarr and gluetun couple their image tag to on-disk config: recyclarr's
+      // CLI flags + include-template names and gluetun's env vars have broken on
+      // non-major bumps, not just majors. The rule above already blocks major
+      // automerge; this also blocks MINOR automerge for these two (which the
+      // App-tier minor rule would otherwise green-light) and labels them so a human
+      // runs the migration check. Patch + digest still automerge so fixes flow.
+      description: "Config-coupled tools (recyclarr, gluetun) — major + minor need manual review",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/recyclarr/", "/gluetun/"],
+      matchUpdateTypes: ["major", "minor"],
+      automerge: false,
+      addLabels: ["config-coupled"],
+    },
+    {
       matchUpdateTypes: ["major"],
       semanticCommitType: "feat",
       commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
