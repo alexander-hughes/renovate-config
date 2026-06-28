@@ -57,49 +57,38 @@
       },
     },
     {
-      description: "talos-stack patch — 5 days automerge",
+      // Talos OS and Kubernetes are DECOUPLED on purpose. A Talos OS upgrade does
+      // not touch Kubernetes (Sidero design), and each Talos release supports a
+      // RANGE of Kubernetes minors (Talos 1.13 → K8s 1.31–1.36 per the Sidero
+      // support matrix). So they ride SEPARATE group PRs and a reviewer (operator
+      // or agentic PR review) decides whether a Talos bump and a Kubernetes bump
+      // share one change window or land in separate ones — including at patch
+      // level. See home-ops AGENTS.md. Bake time + never-auto-merge policy for
+      // both groups lives in the rules near the end of this list (precedence).
+      //
+      // talos group: talosctl CLI (.mise.toml) + cluster Talos OS (versions.yaml).
+      description: "talos group — talosctl CLI + cluster Talos OS version",
       matchPackageNames: [
         "/^aqua:siderolabs\\/talos$/",
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
         "/^siderolabs\\/talos$/",
-        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
       ],
-      groupName: "talos-stack",
+      groupName: "talos",
       group: {
         commitMessageTopic: "{{{groupName}}}",
       },
-      automerge: true,
-      automergeType: "pr",
-      platformAutomerge: true,
-      matchUpdateTypes: ["patch"],
-      minimumReleaseAge: "5 days",
-      schedule: ["after 7am and before 7pm every weekday"],
     },
     {
-      description: "talos-stack minor — 14 days manual",
+      // kubernetes group: kubectl CLI (.mise.toml) + cluster Kubernetes version
+      // (the Talos kubelet image, versions.yaml). Separate stream from talos.
+      description: "kubernetes group — kubectl CLI + cluster Kubernetes version (kubelet)",
       matchPackageNames: [
-        "/^aqua:siderolabs\\/talos$/",
         "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
-        "/^siderolabs\\/talos$/",
         "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
       ],
-      groupName: "talos-stack",
-      matchUpdateTypes: ["minor"],
-      minimumReleaseAge: "14 days",
-      automerge: false,
-    },
-    {
-      description: "talos-stack major — 30 days manual",
-      matchPackageNames: [
-        "/^aqua:siderolabs\\/talos$/",
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
-        "/^siderolabs\\/talos$/",
-        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
-      ],
-      groupName: "talos-stack",
-      matchUpdateTypes: ["major"],
-      minimumReleaseAge: "30 days",
-      automerge: false,
+      groupName: "kubernetes",
+      group: {
+        commitMessageTopic: "{{{groupName}}}",
+      },
     },
     {
       // kubens ships from the ahmetb/kubectx repo (no separate release stream).
@@ -241,25 +230,47 @@
       automerge: false,
     },
     {
-      // talos-stack is the cluster's OS + Kubernetes control plane — HIGH-risk
-      // (node/cluster blast radius) per home-ops AGENTS.md Risk Model, so it
-      // must never auto-merge. Disabling automerge ALSO keeps the Talos +
-      // Kubernetes bundle in ONE PR: the group's members publish on independent
-      // schedules (Talos github-release vs the ghcr.io/siderolabs/kubelet image),
-      // so they clear minimumReleaseAge at different Renovate runs. With automerge
-      // ON, the first-ready member (e.g. Talos) merges alone and the lagging
-      // Kubernetes bump can't accrete into the now-closed PR — the bundle splits
-      // (exactly what happened: Talos 1.13.5 auto-merged without its bundled
-      // Kubernetes 1.36.2). Keeping the PR open lets the late member join it.
-      // Must be LAST so it overrides the generic patch/minor automerge rules
-      // above (later packageRules win on conflicting keys).
-      description: "talos-stack: never auto-merge — keep Talos+Kubernetes bundled in one open PR",
+      // Talos OS + Kubernetes are the cluster's node OS + control plane — HIGH-risk
+      // (node/cluster blast radius) per home-ops AGENTS.md Risk Model. NEVER
+      // auto-merge: a reviewer (operator or agentic PR review) gates every bump and
+      // decides whether a Talos and a Kubernetes update share a change window. These
+      // rules also set the per-update-type bake time. The `talos`/`kubernetes`
+      // groupNames are assigned earlier; these policy rules span both groups' four
+      // packages and are placed LAST so they win over the generic patch/minor
+      // automerge rules above (later packageRules win on conflicting keys).
+      description: "talos + kubernetes patch — 5-day bake, never auto-merge",
       matchPackageNames: [
         "/^aqua:siderolabs\\/talos$/",
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
         "/^siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
         "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
       ],
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "5 days",
+      automerge: false,
+    },
+    {
+      description: "talos + kubernetes minor — 14-day bake, never auto-merge",
+      matchPackageNames: [
+        "/^aqua:siderolabs\\/talos$/",
+        "/^siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
+        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
+      ],
+      matchUpdateTypes: ["minor"],
+      minimumReleaseAge: "14 days",
+      automerge: false,
+    },
+    {
+      description: "talos + kubernetes major — 30-day bake, never auto-merge",
+      matchPackageNames: [
+        "/^aqua:siderolabs\\/talos$/",
+        "/^siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
+        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
+      ],
+      matchUpdateTypes: ["major"],
+      minimumReleaseAge: "30 days",
       automerge: false,
     },
     {
