@@ -241,6 +241,28 @@
       automerge: false,
     },
     {
+      // talos-stack is the cluster's OS + Kubernetes control plane — HIGH-risk
+      // (node/cluster blast radius) per home-ops AGENTS.md Risk Model, so it
+      // must never auto-merge. Disabling automerge ALSO keeps the Talos +
+      // Kubernetes bundle in ONE PR: the group's members publish on independent
+      // schedules (Talos github-release vs the ghcr.io/siderolabs/kubelet image),
+      // so they clear minimumReleaseAge at different Renovate runs. With automerge
+      // ON, the first-ready member (e.g. Talos) merges alone and the lagging
+      // Kubernetes bump can't accrete into the now-closed PR — the bundle splits
+      // (exactly what happened: Talos 1.13.5 auto-merged without its bundled
+      // Kubernetes 1.36.2). Keeping the PR open lets the late member join it.
+      // Must be LAST so it overrides the generic patch/minor automerge rules
+      // above (later packageRules win on conflicting keys).
+      description: "talos-stack: never auto-merge — keep Talos+Kubernetes bundled in one open PR",
+      matchPackageNames: [
+        "/^aqua:siderolabs\\/talos$/",
+        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
+        "/^siderolabs\\/talos$/",
+        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
+      ],
+      automerge: false,
+    },
+    {
       matchUpdateTypes: ["major"],
       semanticCommitType: "feat",
       commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
