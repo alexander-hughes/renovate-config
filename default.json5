@@ -13,8 +13,19 @@
   dependencyDashboardTitle: "Renovate Dashboard :robot:",
   timezone: "America/New_York",
   ignorePaths: ["**/*.sops.*", "**/_template/**"],
+  // `kubernetes/` covers the Flux mono-repo layout (kubernetes/apps/**,
+  // kubernetes/clusters/**, kubernetes/components/**). `infrastructure/` is the
+  // older layout, kept so a repo still on it does not silently go unmanaged.
+  // Without the `kubernetes/` alternative the flux manager matches NOTHING in a
+  // mono-repo — no chart version is tracked — while `clusters/` still matches the
+  // cluster-root Kustomization, which makes the gap look like partial coverage
+  // rather than total absence.
   flux: {
-    managerFilePatterns: ["/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/", "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/"],
+    managerFilePatterns: [
+      "/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/",
+    ],
   },
   helmfile: {
     managerFilePatterns: [
@@ -23,8 +34,15 @@
       "/(^|/)bootstrap/helmfile/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
     ],
   },
+  // Same layouts as the flux manager above. The kubernetes manager has no
+  // default file pattern (an `image:` key is too generic to match blind), so it
+  // tracks exactly what is listed here and nothing else.
   kubernetes: {
-    managerFilePatterns: ["/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/", "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/"],
+    managerFilePatterns: [
+      "/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/",
+    ],
   },
   kustomize: {
     managerFilePatterns: ["/^kustomization\\.ya?ml(?:\\.j2)?$/"],
