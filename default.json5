@@ -72,17 +72,25 @@
   packageRules: [
     // ══ §3 Fail-safe defaults — nothing below automerges unless §5 says so ═════════════════════
     {
+      // Tier labels ride the NON-mergeable `labels` list (last matching rule wins), so a consumer's
+      // later human rule replaces `tier/auto` with `tier/human` instead of accumulating both.
+      // Default is human; §5 flips it to auto. `type/<updateType>` travels in the same list.
+      description: "Default tier: human",
+      matchPackageNames: ["*"],
+      labels: ["type/{{updateType}}", "tier/human"],
+    },
+    {
       description: "Majors are always a human decision",
       matchUpdateTypes: ["major"],
       automerge: false,
-      addLabels: ["tier/human"],
+      labels: ["type/{{updateType}}", "tier/human"],
     },
     {
       description: "0.x minors can break at any time (semver) — human. §5 minor rules exclude 0.x so this stands.",
       matchUpdateTypes: ["minor"],
       matchCurrentVersion: "/^v?0\\./",
       automerge: false,
-      addLabels: ["tier/human"],
+      labels: ["type/{{updateType}}", "tier/human"],
     },
     {
       // custom.regex captures currentValue only (no currentDigest group), so pinDigests produces
@@ -119,11 +127,12 @@
     // ══ §5 App ladder — patch/digest 3 d automerge, minor 7 d automerge at ≥1.0 ════════════════
     // (a) by datasource: container images, Helm charts (OCI charts are docker-datasource), pypi, npm
     {
-      description: "app ladder (datasources) patch/digest — 3 d automerge",
+      description: "app ladder (datasources) patch/digest/pin — 3 d automerge",
       matchDatasources: ["docker", "helm", "pypi", "npm"],
-      matchUpdateTypes: ["patch", "digest"],
+      matchUpdateTypes: ["patch", "digest", "pin", "pinDigest"],
       minimumReleaseAge: "3 days",
       automerge: true,
+      labels: ["type/{{updateType}}", "tier/auto"],
     },
     {
       description: "app ladder (datasources) minor ≥1.0 — 7 d automerge",
@@ -132,6 +141,7 @@
       matchCurrentVersion: "!/^v?0\\./",
       minimumReleaseAge: "7 days",
       automerge: true,
+      labels: ["type/{{updateType}}", "tier/auto"],
     },
     // (b) by manager: CLI pins, hook revs, action pins (github-tags / github-releases / aqua datasources)
     {
@@ -140,6 +150,7 @@
       matchUpdateTypes: ["patch", "digest", "pin", "pinDigest"],
       minimumReleaseAge: "3 days",
       automerge: true,
+      labels: ["type/{{updateType}}", "tier/auto"],
     },
     {
       description: "app ladder (tooling managers) minor ≥1.0 — 7 d automerge",
@@ -148,6 +159,7 @@
       matchCurrentVersion: "!/^v?0\\./",
       minimumReleaseAge: "7 days",
       automerge: true,
+      labels: ["type/{{updateType}}", "tier/auto"],
     },
 
     // ══ §6 Commit messages and labels ═══════════════════════════════════════════════════════════
@@ -165,10 +177,6 @@
     { matchManagers: ["github-actions"], semanticCommitType: "ci", semanticCommitScope: "github-action", commitMessageTopic: "action {{depName}}" },
     { matchDatasources: ["github-releases"], semanticCommitScope: "github-release", commitMessageTopic: "release {{depName}}" },
     { matchManagers: ["mise"], semanticCommitScope: "mise", commitMessageTopic: "tool {{depName}}" },
-    { matchUpdateTypes: ["major"], labels: ["type/major"] },
-    { matchUpdateTypes: ["minor"], labels: ["type/minor"] },
-    { matchUpdateTypes: ["patch"], labels: ["type/patch"] },
-    { matchUpdateTypes: ["digest"], labels: ["type/digest"] },
     { matchDatasources: ["docker"], addLabels: ["renovate/container"] },
     { matchDatasources: ["helm"], addLabels: ["renovate/helm"] },
     { matchManagers: ["github-actions"], addLabels: ["renovate/github-action"] },
