@@ -32,6 +32,13 @@
   // Only waits on REQUIRED checks: inert on Free-plan private repos (no rulesets), live once a ruleset
   // requires the `ci` check (public repos on Free, private repos on Pro).
   platformAutomerge: true,
+  // Rebase only on conflict, fleet-wide. Renovate's default `auto` becomes behind-base-branch once
+  // automerge is on: observed 2026-09-28 in home-ops, a wave of nine green tier-A PRs drained ONE per
+  // Renovate run because every merge left the rest behind base and each was force-pushed and re-CI'd
+  // (a billed minute per PR per cycle). Renovate's PR automerge has no up-to-date requirement of its
+  // own and the rulesets keep "require branches up to date" OFF, so a green, stale PR simply merges.
+  // Do not re-enable per package: any `rebaseWhen: "auto"` on an automerging rule brings the cascade back.
+  rebaseWhen: "conflicted",
   // A release with no releaseTimestamp is treated as stable instead of waiting forever. Digest
   // pinning is the primary control for those ecosystems; the bake is secondary.
   minimumReleaseAgeBehaviour: "timestamp-optional",
@@ -106,22 +113,20 @@
       // Renovate's own automerge check — so until GitHub Pro rulesets make platformAutomerge live,
       // a tooling PR automerges only when a Renovate run inside the window sees green CI. The window
       // is therefore ALL of Monday (America/New_York), not a 6-hour slot.
-      description: "Tooling window: create/update tooling branches only on Mondays (ET); never re-push mid-week; no rebase cascade. A repo undoes this per package with schedule: [\"at any time\"], updateNotScheduled: true, rebaseWhen: \"auto\".",
+      description: "Tooling window: create/update tooling branches only on Mondays (ET); never re-push mid-week. A repo undoes this per package with schedule: [\"at any time\"], updateNotScheduled: true.",
       matchManagers: ["mise", "pre-commit", "github-actions", "custom.regex"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
       schedule: ["* * * * 1"],
       updateNotScheduled: false,
-      rebaseWhen: "conflicted",
     },
     {
       // Annotated charts and images (`# renovate:` with a helm/docker datasource) are app tier, not
-      // tooling: no window, no rebase restriction (design D5).
+      // tooling: no window (design D5).
       description: "Annotated charts/images are app tier — no tooling window",
       matchManagers: ["custom.regex"],
       matchDatasources: ["helm", "docker"],
       schedule: ["at any time"],
       updateNotScheduled: true,
-      rebaseWhen: "auto",
     },
 
     // ══ §5 App ladder — patch/digest 3 d automerge, minor 7 d automerge at ≥1.0 ════════════════
