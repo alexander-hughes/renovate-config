@@ -1,386 +1,64 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  description: [
+    "alexander-hughes fleet preset v2 (2026-09-28). Holds ONLY what is true for every repo; anything",
+    "about one repo lives in that repo's .renovaterc.json5 (its rules come after these and win on the",
+    "keys they set). Sections are ordered so precedence reads top to bottom.",
+  ],
+
+  // ══ §1 Platform behaviour ══════════════════════════════════════════════════════════════════
   extends: [
-    "config:recommended",
+    // best-practices = recommended + docker:pinDigests + helpers:pinGitHubActionDigests + :configMigration
+    // + :pinDevDependencies + abandonments:recommended + security:minimumReleaseAgeNpm (3 d) + weekly
+    // lockfile maintenance (no lockfiles in this fleet — inert).
+    "config:best-practices",
     "docker:enableMajor",
-    "helpers:pinGitHubActionDigests",
-    ":automergeBranch",
+    // Keeps the `# vX.Y.Z` comment beside a SHA pin updatable as semver.
+    "helpers:pinGitHubActionDigestsToSemver",
+    // PR automerge, not branch automerge: no repo runs CI on bare renovate/* branches, so branch mode
+    // never saw a check and waited 25 h before opening a PR anyway. PRs also leave a record.
+    ":automergePr",
     ":dependencyDashboard",
-    ":disableRateLimiting",
     ":semanticCommits",
   ],
   dependencyDashboard: true,
   dependencyDashboardTitle: "Renovate Dashboard :robot:",
   timezone: "America/New_York",
   ignorePaths: ["**/*.sops.*", "**/_template/**"],
-  // `kubernetes/` covers the Flux mono-repo layout (kubernetes/apps/**,
-  // kubernetes/clusters/**, kubernetes/components/**). `infrastructure/` is the
-  // older layout, kept so a repo still on it does not silently go unmanaged.
-  // Without the `kubernetes/` alternative the flux manager matches NOTHING in a
-  // mono-repo — no chart version is tracked — while `clusters/` still matches the
-  // cluster-root Kustomization, which makes the gap look like partial coverage
-  // rather than total absence.
-  flux: {
-    managerFilePatterns: [
-      "/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/",
-    ],
+  // Rate limits ON (was :disableRateLimiting): bounds burst size and the rebase cascade. Vulnerability
+  // fixes have their own budget and skip the line.
+  prConcurrentLimit: 5,
+  prHourlyLimit: 0,
+  // Only waits on REQUIRED checks: inert on Free-plan private repos (no rulesets), live once a ruleset
+  // requires the `ci` check (public repos on Free, private repos on Pro).
+  platformAutomerge: true,
+  // A release with no releaseTimestamp is treated as stable instead of waiting forever. Digest
+  // pinning is the primary control for those ecosystems; the bake is secondary.
+  minimumReleaseAgeBehaviour: "timestamp-optional",
+  // OSV covers npm/pypi datasources. GitHub Dependabot alerts (enable per repo) cover Actions/pip/npm
+  // — NOT Helm charts or container images in Flux manifests; their fast path is a dashboard checkbox.
+  osvVulnerabilityAlerts: true,
+  vulnerabilityAlerts: {
+    labels: ["security"],
+    minimumReleaseAge: null,
   },
-  helmfile: {
-    managerFilePatterns: [
-      "/(^|/)helmfile\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
-      "/(^|/)helmfile\\.d/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
-      "/(^|/)bootstrap/helmfile/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
-    ],
-  },
-  // Same layouts as the flux manager above. The kubernetes manager has no
-  // default file pattern (an `image:` key is too generic to match blind), so it
-  // tracks exactly what is listed here and nothing else.
-  kubernetes: {
-    managerFilePatterns: [
-      "/(^|/)infrastructure/.+\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)clusters/.+\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/",
-    ],
-  },
-  kustomize: {
-    managerFilePatterns: ["/^kustomization\\.ya?ml(?:\\.j2)?$/"],
-  },
+
+  // ══ §2 Managers that every repo uses ═══════════════════════════════════════════════════════
   "pre-commit": {
     enabled: true,
   },
-  packageRules: [
-    {
-      description: "Override Helmfile Dependency Name",
-      matchDatasources: ["docker"],
-      matchManagers: ["helmfile"],
-      overrideDepName: "{{packageName}}",
-    },
-    {
-      description: "Flux Operator Group",
-      groupName: "flux-operator",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["/flux-operator/", "/flux-instance/", "/flux-operator-manifests/"],
-      group: {
-        commitMessageTopic: "{{{groupName}}} group",
-      },
-    },
-    {
-      description: "Group gitleaks updates across mise + pre-commit hook",
-      matchPackageNames: ["/gitleaks/"],
-      groupName: "gitleaks",
-      group: {
-        commitMessageTopic: "{{{groupName}}}",
-      },
-    },
-    {
-      // Talos OS and Kubernetes are DECOUPLED on purpose. A Talos OS upgrade does
-      // not touch Kubernetes (Sidero design), and each Talos release supports a
-      // RANGE of Kubernetes minors (Talos 1.13 → K8s 1.31–1.36 per the Sidero
-      // support matrix). So they ride SEPARATE group PRs and a reviewer (operator
-      // or agentic PR review) decides whether a Talos bump and a Kubernetes bump
-      // share one change window or land in separate ones — including at patch
-      // level. See home-ops AGENTS.md. Bake time + never-auto-merge policy for
-      // both groups lives in the rules near the end of this list (precedence).
-      //
-      // talos group: talosctl CLI (.mise.toml) + cluster Talos OS (versions.yaml).
-      description: "talos group — talosctl CLI + cluster Talos OS version",
-      matchPackageNames: [
-        "/^aqua:siderolabs\\/talos$/",
-        "/^siderolabs\\/talos$/",
-      ],
-      groupName: "talos",
-      group: {
-        commitMessageTopic: "{{{groupName}}}",
-      },
-    },
-    {
-      // kubernetes group: kubectl CLI (.mise.toml) + cluster Kubernetes version
-      // (the Talos kubelet image, versions.yaml). Separate stream from talos.
-      description: "kubernetes group — kubectl CLI + cluster Kubernetes version (kubelet)",
-      matchPackageNames: [
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
-        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
-      ],
-      groupName: "kubernetes",
-      group: {
-        commitMessageTopic: "{{{groupName}}}",
-      },
-    },
-    {
-      // kubens ships from the ahmetb/kubectx repo (no separate release stream).
-      // The customManager regex on `.mise.toml` annotation redirects depName
-      // to ahmetb/kubectx for the lookup; this rule silences mise manager's
-      // parallel auto-detected lookup that would otherwise still 404 on
-      // github-tags ahmetb/kubens.
-      //
-      // matchPackageNames matches against Renovate's `packageName` (not
-      // `depName`). For mise + aqua backend, depName is "aqua:ahmetb/kubens"
-      // but packageName normalises to "ahmetb/kubens" (the "aqua:" is mise's
-      // backend selector, not part of the package identity). Verified via
-      // `npx renovate --platform=local --dry-run=lookup` debug log.
-      description: "Disable mise manager's parallel kubens lookup (annotation handles it)",
-      matchManagers: ["mise"],
-      matchPackageNames: ["ahmetb/kubens"],
-      enabled: false,
-    },
-    {
-      // Same packageName-vs-depName note as above — match the normalised
-      // packageName (no aqua: prefix).
-      description: "Group kubectx + kubens bumps — same upstream repo + tag",
-      matchManagers: ["mise"],
-      matchPackageNames: ["ahmetb/kubectx", "ahmetb/kubens"],
-      groupName: "kubectx-stack",
-      group: {
-        commitMessageTopic: "{{{groupName}}}",
-      },
-    },
-    {
-      description: "CNI (cilium) patch — 5 days automerge",
-      matchPackageNames: ["/cilium/"],
-      matchUpdateTypes: ["patch"],
-      minimumReleaseAge: "5 days",
-      automerge: true,
-      platformAutomerge: true,
-    },
-    {
-      description: "CNI (cilium) minor + major — 14 days manual",
-      matchPackageNames: ["/cilium/"],
-      matchUpdateTypes: ["minor", "major"],
-      minimumReleaseAge: "14 days",
-      automerge: false,
-    },
-    {
-      description: "Critical infra Helm (flux/eso/cert-manager) patch — 5 days automerge",
-      matchPackageNames: ["/flux-operator/", "/flux-instance/", "/external-secrets/", "/cert-manager/"],
-      matchUpdateTypes: ["patch"],
-      minimumReleaseAge: "5 days",
-      automerge: true,
-      platformAutomerge: true,
-    },
-    {
-      description: "Critical infra Helm minor + major — 14 days manual",
-      matchPackageNames: ["/flux-operator/", "/flux-instance/", "/external-secrets/", "/cert-manager/"],
-      matchUpdateTypes: ["minor", "major"],
-      minimumReleaseAge: "14 days",
-      automerge: false,
-    },
-    {
-      description: "GitHub Actions patch + minor + digest — 3-7 days automerge",
-      matchManagers: ["github-actions"],
-      matchUpdateTypes: ["patch", "digest"],
-      minimumReleaseAge: "3 days",
-      automerge: true,
-      platformAutomerge: true,
-    },
-    {
-      description: "GitHub Actions minor — 7 days automerge",
-      matchManagers: ["github-actions"],
-      matchUpdateTypes: ["minor"],
-      minimumReleaseAge: "7 days",
-      automerge: true,
-      platformAutomerge: true,
-    },
-    {
-      description: "Pin docker image digests alongside tags — immutable refs",
-      matchDatasources: ["docker"],
-      pinDigests: true,
-    },
-    {
-      // custom.regex matchStrings capture currentValue only (no currentDigest
-      // group), so Renovate has no anchor to write the new digest back to.
-      // pinDigests:true against these deps produces "Error updating branch:
-      // update failure" and the branch is never pushed. Disable here; rely on
-      // the flux/kubernetes managers (and their writable spec.ref.digest /
-      // image:tag@digest forms) for the actual pinning.
-      description: "Skip digest pin for custom.regex — capture has no currentDigest",
-      matchManagers: ["custom.regex"],
-      pinDigests: false,
-    },
-    {
-      description: "App-tier patch + digest — 3 days automerge",
-      matchUpdateTypes: ["patch", "digest"],
-      automerge: true,
-      platformAutomerge: true,
-      minimumReleaseAge: "3 days",
-    },
-    {
-      description: "App-tier minor (Helm + image only) — 7 days automerge",
-      matchManagers: ["flux", "helmfile", "helm-values", "kubernetes"],
-      matchDatasources: ["docker", "helm"],
-      matchUpdateTypes: ["minor"],
-      minimumReleaseAge: "7 days",
-      automerge: true,
-      platformAutomerge: true,
-    },
-    {
-      description: "CLI tools (mise) patch — 3 days automerge",
-      matchManagers: ["mise"],
-      matchUpdateTypes: ["patch"],
-      minimumReleaseAge: "3 days",
-      automerge: true,
-    },
-    {
-      description: "CLI tools (mise) minor — 7 days automerge",
-      matchManagers: ["mise"],
-      matchUpdateTypes: ["minor"],
-      minimumReleaseAge: "7 days",
-      automerge: true,
-    },
-    {
-      description: "pre-commit hooks patch — 3 days automerge",
-      matchManagers: ["pre-commit"],
-      matchUpdateTypes: ["patch"],
-      minimumReleaseAge: "3 days",
-      automerge: true,
-    },
-    {
-      description: "pre-commit hooks minor — 7 days automerge",
-      matchManagers: ["pre-commit"],
-      matchUpdateTypes: ["minor"],
-      minimumReleaseAge: "7 days",
-      automerge: true,
-    },
-    {
-      description: "Major bumps require manual review (defensive default)",
-      matchUpdateTypes: ["major"],
-      automerge: false,
-    },
-    {
-      // Talos OS + Kubernetes are the cluster's node OS + control plane — HIGH-risk
-      // (node/cluster blast radius) per home-ops AGENTS.md Risk Model. NEVER
-      // auto-merge: a reviewer (operator or agentic PR review) gates every bump and
-      // decides whether a Talos and a Kubernetes update share a change window. These
-      // rules also set the per-update-type bake time. The `talos`/`kubernetes`
-      // groupNames are assigned earlier; these policy rules span both groups' four
-      // packages and are placed LAST so they win over the generic patch/minor
-      // automerge rules above (later packageRules win on conflicting keys).
-      description: "talos + kubernetes patch — 5-day bake, never auto-merge",
-      matchPackageNames: [
-        "/^aqua:siderolabs\\/talos$/",
-        "/^siderolabs\\/talos$/",
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
-        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
-      ],
-      matchUpdateTypes: ["patch"],
-      minimumReleaseAge: "5 days",
-      automerge: false,
-    },
-    {
-      description: "talos + kubernetes minor — 14-day bake, never auto-merge",
-      matchPackageNames: [
-        "/^aqua:siderolabs\\/talos$/",
-        "/^siderolabs\\/talos$/",
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
-        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
-      ],
-      matchUpdateTypes: ["minor"],
-      minimumReleaseAge: "14 days",
-      automerge: false,
-    },
-    {
-      description: "talos + kubernetes major — 30-day bake, never auto-merge",
-      matchPackageNames: [
-        "/^aqua:siderolabs\\/talos$/",
-        "/^siderolabs\\/talos$/",
-        "/^aqua:kubernetes\\/kubernetes\\/kubectl$/",
-        "/^ghcr\\.io\\/siderolabs\\/kubelet$/",
-      ],
-      matchUpdateTypes: ["major"],
-      minimumReleaseAge: "30 days",
-      automerge: false,
-    },
-    {
-      matchUpdateTypes: ["major"],
-      semanticCommitType: "feat",
-      commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
-      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
-    },
-    {
-      matchUpdateTypes: ["minor"],
-      semanticCommitType: "feat",
-      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
-    },
-    {
-      matchUpdateTypes: ["patch"],
-      semanticCommitType: "fix",
-      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
-    },
-    {
-      matchUpdateTypes: ["digest"],
-      semanticCommitType: "chore",
-      commitMessageExtra: "( {{currentDigestShort}} ➔ {{newDigestShort}} )",
-    },
-    {
-      matchDatasources: ["docker"],
-      semanticCommitScope: "container",
-      commitMessageTopic: "image {{depName}}",
-    },
-    {
-      matchDatasources: ["helm"],
-      semanticCommitScope: "helm",
-      commitMessageTopic: "chart {{depName}}",
-    },
-    {
-      matchManagers: ["github-actions"],
-      semanticCommitType: "ci",
-      semanticCommitScope: "github-action",
-      commitMessageTopic: "action {{depName}}",
-    },
-    {
-      matchDatasources: ["github-releases"],
-      semanticCommitScope: "github-release",
-      commitMessageTopic: "release {{depName}}",
-    },
-    {
-      matchManagers: ["mise"],
-      semanticCommitScope: "mise",
-      commitMessageTopic: "tool {{depName}}",
-    },
-    {
-      matchUpdateTypes: ["major"],
-      labels: ["type/major"],
-    },
-    {
-      matchUpdateTypes: ["minor"],
-      labels: ["type/minor"],
-    },
-    {
-      matchUpdateTypes: ["patch"],
-      labels: ["type/patch"],
-    },
-    {
-      matchUpdateTypes: ["digest"],
-      labels: ["type/digest"],
-    },
-    {
-      matchDatasources: ["docker"],
-      addLabels: ["renovate/container"],
-    },
-    {
-      matchDatasources: ["helm"],
-      addLabels: ["renovate/helm"],
-    },
-    {
-      matchManagers: ["github-actions"],
-      addLabels: ["renovate/github-action"],
-    },
-    {
-      matchDatasources: ["github-releases"],
-      addLabels: ["renovate/github-release"],
-    },
-  ],
   customManagers: [
     {
-      description: "Process annotated dependencies",
+      description: "Annotated dependencies: `# renovate: datasource=X depName=Y [repository=U] [versioning=V] [extractVersion=R]` above a `key: value` / `key=value` line; the value may be quoted. No `: ` or `=` in a trailing comment on that line (the match is greedy).",
       customType: "regex",
       managerFilePatterns: ["/(^|/).+\\.env(?:\\.j2)?$/", "/(^|/).+\\.sh(?:\\.j2)?$/", "/(^|/).+\\.ya?ml(?:\\.j2)?$/"],
       matchStrings: [
-        "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( repository=(?<registryUrl>\\S+))?\\n.+(:\\s|=)(&\\S+\\s)?(?<currentValue>\\S+)",
+        "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( repository=(?<registryUrl>\\S+))?( versioning=(?<versioning>\\S+))?( extractVersion=(?<extractVersion>\\S+))?\\n.+(:\\s|=\\s?)(&\\S+\\s)?[\"']?(?<currentValue>[^\"'\\s]+)[\"']?",
         "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n.+/(?<currentValue>(v|\\d)[^/]+)",
       ],
       datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      versioningTemplate: "{{#if versioning}}{{{versioning}}}{{/if}}",
+      extractVersionTemplate: "{{#if extractVersion}}{{{extractVersion}}}{{/if}}",
     },
     {
       customType: "regex",
@@ -389,14 +67,111 @@
       matchStrings: ["oci://(?<depName>[^:]+):(?<currentValue>\\S+)"],
       datasourceTemplate: "docker",
     },
+  ],
+
+  packageRules: [
+    // ══ §3 Fail-safe defaults — nothing below automerges unless §5 says so ═════════════════════
     {
-      customType: "regex",
-      description: "Cosign verify image-tag args in helmfile hooks",
-      managerFilePatterns: ["/(^|/)bootstrap/helmfile/.+\\.ya?ml(?:\\.gotmpl)?$/"],
-      matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*-\\s*"[^":]+:(?<currentValue>[^"]+)"',
-      ],
-      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}docker{{/if}}",
+      description: "Majors are always a human decision",
+      matchUpdateTypes: ["major"],
+      automerge: false,
+      addLabels: ["tier/human"],
     },
+    {
+      description: "0.x minors can break at any time (semver) — human. §5 minor rules exclude 0.x so this stands.",
+      matchUpdateTypes: ["minor"],
+      matchCurrentVersion: "/^v?0\\./",
+      automerge: false,
+      addLabels: ["tier/human"],
+    },
+    {
+      // custom.regex captures currentValue only (no currentDigest group), so pinDigests produces
+      // "Error updating branch: update failure". Native managers do the digest pinning.
+      description: "Skip digest pin for custom.regex — capture has no currentDigest",
+      matchManagers: ["custom.regex"],
+      pinDigests: false,
+    },
+
+    // ══ §4 Tooling window ═══════════════════════════════════════════════════════════════════════
+    {
+      // NOTE: with updateNotScheduled:false an out-of-window branch is skipped entirely, including
+      // Renovate's own automerge check — so until GitHub Pro rulesets make platformAutomerge live,
+      // a tooling PR automerges only when a Renovate run inside the window sees green CI. The window
+      // is therefore ALL of Monday (America/New_York), not a 6-hour slot.
+      description: "Tooling window: create/update tooling branches only on Mondays (ET); never re-push mid-week; no rebase cascade. A repo undoes this per package with schedule: [\"at any time\"], updateNotScheduled: true, rebaseWhen: \"auto\".",
+      matchManagers: ["mise", "pre-commit", "github-actions", "custom.regex"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      schedule: ["* * * * 1"],
+      updateNotScheduled: false,
+      rebaseWhen: "conflicted",
+    },
+    {
+      // Annotated charts and images (`# renovate:` with a helm/docker datasource) are app tier, not
+      // tooling: no window, no rebase restriction (design D5).
+      description: "Annotated charts/images are app tier — no tooling window",
+      matchManagers: ["custom.regex"],
+      matchDatasources: ["helm", "docker"],
+      schedule: ["at any time"],
+      updateNotScheduled: true,
+      rebaseWhen: "auto",
+    },
+
+    // ══ §5 App ladder — patch/digest 3 d automerge, minor 7 d automerge at ≥1.0 ════════════════
+    // (a) by datasource: container images, Helm charts (OCI charts are docker-datasource), pypi, npm
+    {
+      description: "app ladder (datasources) patch/digest — 3 d automerge",
+      matchDatasources: ["docker", "helm", "pypi", "npm"],
+      matchUpdateTypes: ["patch", "digest"],
+      minimumReleaseAge: "3 days",
+      automerge: true,
+    },
+    {
+      description: "app ladder (datasources) minor ≥1.0 — 7 d automerge",
+      matchDatasources: ["docker", "helm", "pypi", "npm"],
+      matchUpdateTypes: ["minor"],
+      matchCurrentVersion: "!/^v?0\\./",
+      minimumReleaseAge: "7 days",
+      automerge: true,
+    },
+    // (b) by manager: CLI pins, hook revs, action pins (github-tags / github-releases / aqua datasources)
+    {
+      description: "app ladder (tooling managers) patch/digest/pin — 3 d automerge",
+      matchManagers: ["mise", "pre-commit", "github-actions"],
+      matchUpdateTypes: ["patch", "digest", "pin", "pinDigest"],
+      minimumReleaseAge: "3 days",
+      automerge: true,
+    },
+    {
+      description: "app ladder (tooling managers) minor ≥1.0 — 7 d automerge",
+      matchManagers: ["mise", "pre-commit", "github-actions"],
+      matchUpdateTypes: ["minor"],
+      matchCurrentVersion: "!/^v?0\\./",
+      minimumReleaseAge: "7 days",
+      automerge: true,
+    },
+
+    // ══ §6 Commit messages and labels ═══════════════════════════════════════════════════════════
+    {
+      matchUpdateTypes: ["major"],
+      semanticCommitType: "feat",
+      commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
+      commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )",
+    },
+    { matchUpdateTypes: ["minor"], semanticCommitType: "feat", commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )" },
+    { matchUpdateTypes: ["patch"], semanticCommitType: "fix", commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )" },
+    { matchUpdateTypes: ["digest"], semanticCommitType: "chore", commitMessageExtra: "( {{currentDigestShort}} ➔ {{newDigestShort}} )" },
+    { matchDatasources: ["docker"], semanticCommitScope: "container", commitMessageTopic: "image {{depName}}" },
+    { matchDatasources: ["helm"], semanticCommitScope: "helm", commitMessageTopic: "chart {{depName}}" },
+    { matchManagers: ["github-actions"], semanticCommitType: "ci", semanticCommitScope: "github-action", commitMessageTopic: "action {{depName}}" },
+    { matchDatasources: ["github-releases"], semanticCommitScope: "github-release", commitMessageTopic: "release {{depName}}" },
+    { matchManagers: ["mise"], semanticCommitScope: "mise", commitMessageTopic: "tool {{depName}}" },
+    { matchUpdateTypes: ["major"], labels: ["type/major"] },
+    { matchUpdateTypes: ["minor"], labels: ["type/minor"] },
+    { matchUpdateTypes: ["patch"], labels: ["type/patch"] },
+    { matchUpdateTypes: ["digest"], labels: ["type/digest"] },
+    { matchDatasources: ["docker"], addLabels: ["renovate/container"] },
+    { matchDatasources: ["helm"], addLabels: ["renovate/helm"] },
+    { matchManagers: ["github-actions"], addLabels: ["renovate/github-action"] },
+    { matchDatasources: ["github-releases"], addLabels: ["renovate/github-release"] },
   ],
 }
