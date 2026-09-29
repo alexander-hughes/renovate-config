@@ -3,7 +3,8 @@
   description: [
     "alexander-hughes fleet preset v2 (2026-09-28). Holds ONLY what is true for every repo; anything",
     "about one repo lives in that repo's .renovaterc.json5 (its rules come after these and win on the",
-    "keys they set). Sections are ordered so precedence reads top to bottom.",
+    "keys they set). Sections are ordered so precedence reads top to bottom. No schedules: everything opens",
+    "when its bake age is met and merges on green (tier A) or when a human clicks (2026-09-28 ruling).",
   ],
 
   // ══ §1 Platform behaviour ══════════════════════════════════════════════════════════════════
@@ -25,10 +26,13 @@
   dependencyDashboardTitle: "Renovate Dashboard :robot:",
   timezone: "America/New_York",
   ignorePaths: ["**/*.sops.*", "**/_template/**"],
-  // Rate limits ON (was :disableRateLimiting): bounds burst size and the rebase cascade. Vulnerability
-  // fixes have their own budget and skip the line.
-  prConcurrentLimit: 5,
-  prHourlyLimit: 0,
+  // Flow, don't batch (operator ruling 2026-09-28 after the first live wave). No cap on open PRs: human-tier
+  // PRs that wait would otherwise fill the cap and starve tier A (home-ops sat at 10/10 with 12 more
+  // rate-limited that evening). Two PR creations per hour — Renovate's default — is the only smoothing:
+  // an incident traces back to at most two merges in any hour, and a burst after a preset change drains
+  // at a readable pace. Vulnerability fixes have their own budget and skip the line.
+  prConcurrentLimit: 0,
+  prHourlyLimit: 2,
   // Only waits on REQUIRED checks: inert on Free-plan private repos (no rulesets), live once a ruleset
   // requires the `ci` check (public repos on Free, private repos on Pro).
   platformAutomerge: true,
@@ -77,11 +81,11 @@
   ],
 
   packageRules: [
-    // ══ §3 Fail-safe defaults — nothing below automerges unless §5 says so ═════════════════════
+    // ══ §3 Fail-safe defaults — nothing below automerges unless §4 says so ═════════════════════
     {
       // Tier labels ride the NON-mergeable `labels` list (last matching rule wins), so a consumer's
       // later human rule replaces `tier/auto` with `tier/human` instead of accumulating both.
-      // Default is human; §5 flips it to auto. `type/<updateType>` travels in the same list.
+      // Default is human; §4 flips it to auto. `type/<updateType>` travels in the same list.
       description: "Default tier: human",
       matchPackageNames: ["*"],
       labels: ["type/{{updateType}}", "tier/human"],
@@ -93,7 +97,7 @@
       labels: ["type/{{updateType}}", "tier/human"],
     },
     {
-      description: "0.x minors can break at any time (semver) — human. §5 minor rules exclude 0.x so this stands.",
+      description: "0.x minors can break at any time (semver) — human. §4 minor rules exclude 0.x so this stands.",
       matchUpdateTypes: ["minor"],
       matchCurrentVersion: "/^v?0\\./",
       automerge: false,
@@ -107,29 +111,7 @@
       pinDigests: false,
     },
 
-    // ══ §4 Tooling window ═══════════════════════════════════════════════════════════════════════
-    {
-      // NOTE: with updateNotScheduled:false an out-of-window branch is skipped entirely, including
-      // Renovate's own automerge check — so until GitHub Pro rulesets make platformAutomerge live,
-      // a tooling PR automerges only when a Renovate run inside the window sees green CI. The window
-      // is therefore ALL of Monday (America/New_York), not a 6-hour slot.
-      description: "Tooling window: create/update tooling branches only on Mondays (ET); never re-push mid-week. A repo undoes this per package with schedule: [\"at any time\"], updateNotScheduled: true.",
-      matchManagers: ["mise", "pre-commit", "github-actions", "custom.regex"],
-      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
-      schedule: ["* * * * 1"],
-      updateNotScheduled: false,
-    },
-    {
-      // Annotated charts and images (`# renovate:` with a helm/docker datasource) are app tier, not
-      // tooling: no window (design D5).
-      description: "Annotated charts/images are app tier — no tooling window",
-      matchManagers: ["custom.regex"],
-      matchDatasources: ["helm", "docker"],
-      schedule: ["at any time"],
-      updateNotScheduled: true,
-    },
-
-    // ══ §5 App ladder — patch/digest 3 d automerge, minor 7 d automerge at ≥1.0 ════════════════
+    // ══ §4 App ladder — patch/digest 3 d automerge, minor 7 d automerge at ≥1.0 ════════════════
     // (a) by datasource: container images, Helm charts (OCI charts are docker-datasource), pypi, npm
     {
       description: "app ladder (datasources) patch/digest/pin — 3 d automerge",
@@ -167,7 +149,7 @@
       labels: ["type/{{updateType}}", "tier/auto"],
     },
 
-    // ══ §6 Commit messages and labels ═══════════════════════════════════════════════════════════
+    // ══ §5 Commit messages and labels ═══════════════════════════════════════════════════════════
     {
       matchUpdateTypes: ["major"],
       semanticCommitType: "feat",
