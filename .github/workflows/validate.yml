@@ -1,8 +1,8 @@
 name: Validate Renovate preset
 
 on:
+  # No path filter: `validate` is a required check, so it must report on every PR.
   pull_request:
-    paths: ["**.json5", ".github/workflows/validate.yml"]
   workflow_dispatch:
 
 concurrency:
