@@ -11,7 +11,7 @@
   extends: [
     // best-practices = recommended + docker:pinDigests + helpers:pinGitHubActionDigests + :configMigration
     // + :pinDevDependencies + abandonments:recommended + security:minimumReleaseAgeNpm (3 d) + weekly
-    // lockfile maintenance (no lockfiles in this fleet — inert).
+    // lockfile maintenance (mise lockfiles; not on the ladder, so human merge).
     "config:best-practices",
     "docker:enableMajor",
     // Keeps the `# vX.Y.Z` comment beside a SHA pin updatable as semver.
