@@ -21,7 +21,7 @@ Add repo-specific overrides below `extends` as needed. The preset always resolve
 
 `default.json5` holds **only what is true for every repo** — five sections, ordered so precedence reads top to bottom:
 
-1. Platform behaviour: PR automerge, dashboard, no open-PR cap and two new PRs an hour, rebase only on conflict, `timestamp-optional`, OSV + vulnerability fast path (`security` label, 0-day bake).
+1. Platform behaviour: PR automerge, dashboard, no open-PR cap and two new PRs an hour, rebase when behind base, `timestamp-optional`, OSV + vulnerability fast path (`security` label, 0-day bake).
 2. Managers every repo uses: pre-commit, `# renovate:` annotations (quoted values allowed; `.env/.sh/.yaml`), `oci://` refs.
 3. Fail-safe defaults: majors and 0.x minors are human (`tier/human`); nothing automerges unless §4 says so.
 4. App ladder: patch/digest/pin 3 d automerge, minor 7 d automerge at ≥1.0 — for container images, Helm charts, pypi/npm, mise CLI pins, hook revs, action pins. PRs carry `type/<updateType>` plus `tier/auto` or `tier/human` (a consumer's later rule replaces the tier). Annotated deps on `github-releases`/`github-tags` (vendor tarballs such as Technitium) are not on the ladder: human merge.
