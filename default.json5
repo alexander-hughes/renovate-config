@@ -36,10 +36,12 @@
   // Only waits on REQUIRED checks: inert on Free-plan private repos (no rulesets), live once a ruleset
   // requires the `ci` check (public repos on Free, private repos on Pro).
   platformAutomerge: true,
-  // Keep every PR, human tier included, current with its base so CI tests what would merge. The
-  // conflicted-only setting (2026-09-28) guarded against a rebase cascade when Renovate merged one PR
-  // per run; with platform automerge GitHub merges each PR minutes after CI goes green.
-  rebaseWhen: "behind-base-branch",
+  // Rebase a PR only when it conflicts (or its rebase checkbox is ticked). `behind-base-branch` rebased
+  // every open PR on every merge to main, and each rebase is a full CI run: in November 2026 about 1,260
+  // of the account's ~3,060 billed Actions minutes were re-runs of PRs waiting for review. No consumer's
+  // ruleset requires an up-to-date branch, so a PR that is behind main still merges; an automerged
+  // version bump lands at most a few bumps behind what its CI tested.
+  rebaseWhen: "conflicted",
   // A release with no releaseTimestamp is treated as stable instead of waiting forever. Digest
   // pinning is the primary control for those ecosystems; the bake is secondary.
   minimumReleaseAgeBehaviour: "timestamp-optional",
